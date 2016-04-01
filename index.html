@@ -46,9 +46,26 @@
 <h3>
 <a id="goals-and-deliverables" class="anchor" href="#goals-and-deliverables" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Goals and Deliverables</h3>
 
-<p>Watermelon will at the bare minimum implement a functional subset of <code>std::unordered_map</code>, including the basic insert, delete and lookup operations, with dynamic resizing and iteration. Watermelon will also deliver a benchmark suite comparing its performance against other concurrent associative array implementations, such as a basic <code>std::unordered_map</code> protected by a mutex, Intel's <a href="https://software.intel.com/en-us/node/506077"><code>concurrent_hash_map</code></a>, and <a href="https://github.com/preshing/junction">Junction</a>.</p>
+<p>Watermelon will at the bare minimum implement a functional subset of <code>std::unordered_map</code>, including the basic insert, delete and lookup operations, with dynamic resizing and iteration. Watermelon will also deliver a benchmark suite comparing its performance against other concurrent associative array implementations, such as a basic <code>std::unordered_map</code> protected by a mutex, Intel's <a href="https://software.intel.com/en-us/node/506077"><code>tbb::concurrent_hash_map</code></a>, and <a href="https://github.com/preshing/junction">Junction</a>.</p>
+
+<p>Watermelon hopes to outperform <code>tbb:concurrent_hash_map</code> and the lock-protected <code>std::unordered_map</code>.</p>
 
 <p>If time permits, Watermelon will attempt to implement remainder of <code>std::unordered_map</code>, including copy and move semantics, equality, and swap operations.</p>
+
+<h3>
+<a id="platform" class="anchor" href="#platform" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Platform</h3>
+
+<p>Watermelon will be implemented in C++11 with atomic operations such as compare and swap, and atomic arithmetic to implement its hash table. Watermelon will require Intel processors, and be implemented in plain C++.</p>
+
+<h3>
+<a id="schedule" class="anchor" href="#schedule" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Schedule</h3>
+
+<p>April 2 - April 8 - Implement benchmarking code
+April 9 - April 13 - Implement basic associative array operations on a non-resizable hash-map with chaining.
+April 14 - April 17 - Carnival. Lol no work.
+April 18 - April 22 - Implement resizing.
+April 23 - April 29 - Implement associative array with probing strategies.
+April 30 - May 6 - Tune implementations and select best option.</p>
 
       <footer class="site-footer">
         <span class="site-footer-owner"><a href="https://github.com/matthewdu77/watermelon">Watermelon</a> is maintained by <a href="https://github.com/matthewdu77">matthewdu77</a>.</span>
