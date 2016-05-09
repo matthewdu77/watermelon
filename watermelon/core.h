@@ -53,7 +53,7 @@ class unordered_map
     struct iterator : public std::forward_iterator_tag
     {
       iterator() : iterator(0, 0, NULL) {}
-      iterator(iterator &i) : iterator(i.index, i.buckets) {}
+      iterator(const iterator &i) : iterator(i.index, i.buckets) {}
       iterator(size_type index, table buckets)
         : index(index), buckets(buckets) {}
       ~iterator() {}
@@ -113,7 +113,7 @@ class unordered_map
     struct const_iterator : public std::forward_iterator_tag
     {
       const_iterator() : const_iterator(0, 0, NULL) {}
-      const_iterator(const_iterator &i) :
+      const_iterator(const const_iterator &i) :
         const_iterator(i.index, i.buckets) {}
       const_iterator(size_type index, table buckets)
         : index(index), buckets(buckets) {}
@@ -367,8 +367,8 @@ class unordered_map
     template <class... Args>
     std::pair<iterator, bool> emplace(Args&&... args)
     {
-      auto bucket = std::allocate_shared(alloc, std::forward<Args&&...>(args...));
-      return createBucket(bucket);
+      std::shared_ptr<value_type> v = std::allocate_shared(alloc, std::forward<Args>(args)...);
+      return createBucket(v);
     }
     template <class... Args>
     iterator emplace_hint(const_iterator position, Args&&... args)
@@ -377,15 +377,16 @@ class unordered_map
     }
     std::pair<iterator,bool> insert(const value_type& val)
     {
-      auto bucket =
+      std::shared_ptr<value_type> v =
         std::allocate_shared(alloc, std::forward<const value_type&>(val));
-      return createBucket(bucket);
+      return createBucket(v);
     }
     template <class P>
       std::pair<iterator,bool> insert(P&& val)
     {
-      auto bucket = std::allocate_shared(alloc, std::forward<P&&>(val));
-      return createBucket(bucket);
+      std::shared_ptr<value_type> v =
+        std::allocate_shared<value_type>(alloc, std::forward<P&&>(val));
+      return createBucket(v);
     }
     iterator insert(const_iterator hint, const value_type& val)
     {
@@ -415,7 +416,7 @@ class unordered_map
       iterator ret(position);
       ret++;
       bucket& b = position.buckets.at(position.index).load();
-      if (b.state == FULL && b.state.compare_exchange_weak(FULL, DELETED))
+      if (b.state == FULL && b.state.compare_exchange_strong(FULL, DELETED))
       {
         element_count--;
       }
@@ -448,26 +449,27 @@ class unordered_map
     std::pair<iterator, bool> createBucket(std::shared_ptr<value_type>& val)
     {
       table workingTable = buckets;
-      int hashValue = hf(val->first);
+      size_t hashValue = hf(val->first);
       for (int i = 0; i < workingTable->size(); i++)
       {
-        int index = (i + hashValue) % workingTable->size();
+        size_t index = (i + hashValue) % workingTable->size();
         bucket bucket = workingTable->at(index).load();
 
         // skip empty buckets
-        if (bucket->tag == DELETED)
+        if (bucket->state == DELETED)
         {
           continue;
         }
-        if (bucket->tag == EMPTY &&
-            bucket->tag.compare_exchange_weak(EMPTY, FULL))
+        int expected = EMPTY;
+        if (bucket->state == EMPTY &&
+            bucket->state.compare_exchange_strong(expected, FULL))
         {
           element_count++;
           residence++;
           return std::make_pair(iterator(index, workingTable), true);
         }
-        if (hashValue == hf(bucket->v.second) &&
-            eql(val->second, bucket->second)) {
+        if (hashValue == hf(bucket->v->second) &&
+            eql(val->second, bucket->v->second)) {
           return std::make_pair(iterator(index, workingTable), false);
         }
       }
@@ -483,11 +485,11 @@ class unordered_map
         bucket bucket = (*workingTable)[index].load();
 
         // skip empty buckets
-        if (bucket->tag == DELETED)
+        if (bucket->state == DELETED)
         {
           continue;
         }
-        if (bucket->tag == EMPTY)
+        if (bucket->state == EMPTY)
         {
           break;
         }
@@ -516,8 +518,9 @@ class unordered_map
           return false;
         }
         if (hashValue == hf(bucket->second) && eql(val->second, bucket->second)) {
+          int expected = FULL;
           if (bucket->state == FULL &&
-              bucket->state.compare_exchange_weak(FULL, DELETED))
+              bucket->state.compare_exchange_strong(expected, DELETED))
           {
             element_count--;
             return std::make_pair(iterator(index, workingTable), true);
