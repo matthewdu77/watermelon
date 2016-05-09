@@ -35,7 +35,19 @@ class unordered_map
     typedef size_t size_type;
     typedef ptrdiff_t difference_type;
 
-    typedef std::shared_ptr<value_type> bucket;
+    static const int EMPTY = 0;
+    static const int FULL= 1;
+    static const int DELETED = 2;
+    struct bucket_info
+    {
+      bucket_info() : v(nullptr), state(EMPTY) {}
+      bucket_info(bucket_info& b) : v(b.v), state(b.state.load()) {}
+      bucket_info(std::shared_ptr<value_type>& v, int state)
+        : v(v), state(state) {}
+      std::shared_ptr<value_type> v;
+      std::atomic<int> state;
+    };
+    typedef std::shared_ptr<bucket_info> bucket;
     typedef std::shared_ptr<std::vector<std::atomic<bucket>>> table;
 
     struct iterator : public std::forward_iterator_tag
@@ -65,11 +77,11 @@ class unordered_map
 
       value_type& operator*()
       {
-        return *((*buckets)[index]).load();
+        return *(buckets->at(index).load().v);
       }
       const value_type& operator*() const
       {
-        return *((*buckets)[index]).load();
+        return *(buckets->at(index).load().v);
       }
 
       iterator& operator++()
@@ -77,8 +89,8 @@ class unordered_map
         index++;
         while (index < buckets->size())
         {
-          bucket b = buckets->get(index).load();
-          if (b != deletedBucket && b != emptyBucket)
+          bucket& b = buckets->at(index).load();
+          if (b.state != FULL)
           {
             break;
           }
@@ -126,7 +138,7 @@ class unordered_map
 
       const value_type& operator*() const
       {
-        return *((*buckets)[index]).load();
+        return *(buckets->at(index).load().v);
       }
 
       const_iterator& operator++()
@@ -134,8 +146,8 @@ class unordered_map
         index++;
         while (index < buckets->size())
         {
-          bucket b = buckets->get(index).load();
-          if (b != deletedBucket && b != emptyBucket)
+          bucket& b = buckets->at(index).load();
+          if (b.state != FULL)
           {
             break;
           }
@@ -155,13 +167,6 @@ class unordered_map
       table buckets;
     };
 
-    class SentinelDeleter
-    {
-      public:
-        template <class R>
-          void operator()(R val) {(void) val;}
-    };
-
     // empty constructors
     explicit unordered_map(size_type n = DEFAULT_SIZE,
         const hasher& hf = hasher(),
@@ -171,8 +176,9 @@ class unordered_map
         hf(hf), eql(eql), alloc(alloc)
     {
       buckets = std::make_shared<std::vector<std::atomic<bucket>>>(n);
-      emptyBucket = std::shared_ptr<value_type>((value_type*) 0, SentinelDeleter());
-      deletedBucket = std::shared_ptr<value_type>((value_type*) 1, SentinelDeleter());
+      for (int i = 0; i < n; i++)
+      {
+      }
     }
     explicit unordered_map(const allocator_type& alloc)
       : unordered_map(DEFAULT_SIZE, hasher(), key_equal(), alloc) {}
@@ -408,8 +414,11 @@ class unordered_map
     {
       iterator ret(position);
       ret++;
-      auto b = position.buckets.get()[position.index];
-      b.store(deletedBucket);
+      bucket& b = position.buckets.at(position.index).load();
+      if (b.state == FULL && b.state.compare_exchange_weak(FULL, DELETED))
+      {
+        element_count--;
+      }
       return ret;
     }
     size_type erase(const key_type& k)
@@ -436,28 +445,30 @@ class unordered_map
     typedef std::shared_ptr<std::vector<std::atomic<bucket>>> table;
     */
 
-    std::pair<iterator, bool> createBucket(bucket& val)
+    std::pair<iterator, bool> createBucket(std::shared_ptr<value_type>& val)
     {
       table workingTable = buckets;
       int hashValue = hf(val->first);
       for (int i = 0; i < workingTable->size(); i++)
       {
         int index = (i + hashValue) % workingTable->size();
-        bucket& bucket = (*workingTable)[index].load();
+        bucket bucket = workingTable->at(index).load();
 
         // skip empty buckets
-        if (bucket == deletedBucket)
+        if (bucket->tag == DELETED)
         {
           continue;
         }
-        if (hashValue == hf(bucket->second) && eql(val->second, bucket->second)) {
-          return std::make_pair(iterator(index, workingTable), false);
-        }
-        if ((*workingTable)[index].compare_exchange_weak(emptyBucket, val))
+        if (bucket->tag == EMPTY &&
+            bucket->tag.compare_exchange_weak(EMPTY, FULL))
         {
           element_count++;
           residence++;
           return std::make_pair(iterator(index, workingTable), true);
+        }
+        if (hashValue == hf(bucket->v.second) &&
+            eql(val->second, bucket->second)) {
+          return std::make_pair(iterator(index, workingTable), false);
         }
       }
       return std::make_pair(end(), false);
@@ -469,14 +480,14 @@ class unordered_map
       for (int i = 0; i < workingTable->size(); i++)
       {
         int index = (i + hashValue) % workingTable->size();
-        bucket& bucket = (*workingTable)[index].load();
+        bucket bucket = (*workingTable)[index].load();
 
         // skip empty buckets
-        if (bucket == deletedBucket)
+        if (bucket->tag == DELETED)
         {
           continue;
         }
-        if (bucket == emptyBucket)
+        if (bucket->tag == EMPTY)
         {
           break;
         }
@@ -496,17 +507,17 @@ class unordered_map
         bucket bucket = (*workingTable)[index].load();
 
         // skip empty buckets
-        if (bucket == deletedBucket)
+        if (bucket->state == DELETED)
         {
           continue;
         }
-        if (bucket == emptyBucket)
+        if (bucket->state == EMPTY)
         {
           return false;
         }
         if (hashValue == hf(bucket->second) && eql(val->second, bucket->second)) {
-          (*workingTable)[index].store(deletedBucket);
-          if ((*workingTable)[index].compare_exchange_weak(bucket, deletedBucket))
+          if (bucket->state == FULL &&
+              bucket->state.compare_exchange_weak(FULL, DELETED))
           {
             element_count--;
             return std::make_pair(iterator(index, workingTable), true);
@@ -516,10 +527,6 @@ class unordered_map
       return false;
     }
     void resize();
-
-    // sentinel values
-    bucket deletedBucket;
-    bucket emptyBucket;
 
     size_type bucket_count;
     std::atomic<size_type> element_count;
