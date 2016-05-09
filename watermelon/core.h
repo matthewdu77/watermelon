@@ -151,7 +151,8 @@ class unordered_map
         const hasher& hf = hasher(),
         const key_equal& eql = key_equal(),
         const allocator_type& alloc = allocator_type())
-      : bucket_count(n), hf(hf), eql(eql), alloc(alloc)
+      : bucket_count(n), element_count(0), residence(0),
+        hf(hf), eql(eql), alloc(alloc)
     {
       buckets = std::make_shared<std::vector<std::atomic<bucket>>>(n);
       emptyBucket = std::shared_ptr<value_type>((value_type*) 0, SentinelDeleter());
@@ -214,6 +215,9 @@ class unordered_map
     {
       clear();
       std::swap(buckets, ump.buckets);
+      std::swap(bucket_count, ump.bucket_count);
+      std::swap(element_count, ump.element_count);
+      std::swap(residence, ump.residence);
       return *this;
     }
     unordered_map& operator=(std::initializer_list<value_type> il)
@@ -435,6 +439,8 @@ class unordered_map
         }
         if ((*workingTable)[index].compare_exchange_weak(emptyBucket, val))
         {
+          element_count++;
+          residence++;
           return std::make_pair(iterator(index, workingTable), true);
         }
       }
@@ -471,7 +477,7 @@ class unordered_map
       for (int i = 0; i < workingTable->size(); i++)
       {
         int index = (i + hashValue) % workingTable->size();
-        bucket& bucket = (*workingTable)[index].load();
+        bucket bucket = (*workingTable)[index].load();
 
         // skip empty buckets
         if (bucket == deletedBucket)
@@ -484,6 +490,11 @@ class unordered_map
         }
         if (hashValue == hf(bucket->second) && eql(val->second, bucket->second)) {
           (*workingTable)[index].store(deletedBucket);
+          if ((*workingTable)[index].compare_exchange_weak(bucket, deletedBucket))
+          {
+            element_count--;
+            return std::make_pair(iterator(index, workingTable), true);
+          }
         }
       }
       return false;
@@ -495,7 +506,8 @@ class unordered_map
     bucket emptyBucket;
 
     size_type bucket_count;
-    size_type element_count;
+    std::atomic<size_type> element_count;
+    std::atomic<size_type> residence;
     const hasher& hf;
     const key_equal& eql;
     const allocator_type& alloc;
