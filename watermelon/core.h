@@ -178,6 +178,7 @@ class unordered_map
       buckets = std::make_shared<std::vector<std::atomic<bucket>>>(n);
       for (int i = 0; i < n; i++)
       {
+        buckets->at(i) = std::make_shared<bucket_info>();
       }
     }
     explicit unordered_map(const allocator_type& alloc)
