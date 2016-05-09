@@ -139,6 +139,13 @@ class unordered_map
       table buckets;
     };
 
+    class SentinelDeleter
+    {
+      public:
+        template <class R>
+          void operator()(R val) {(void) val;}
+    };
+
     // empty constructors
     explicit unordered_map(size_type n = DEFAULT_SIZE,
         const hasher& hf = hasher(),
@@ -147,8 +154,8 @@ class unordered_map
       : bucket_count(n), hf(hf), eql(eql), alloc(alloc)
     {
       buckets = std::make_shared<std::vector<std::atomic<bucket>>>(n);
-      emptyBucket = std::shared_ptr<value_type>((value_type*) 0);
-      deletedBucket = std::shared_ptr<value_type>((value_type*) 1);
+      emptyBucket = std::shared_ptr<value_type>((value_type*) 0, SentinelDeleter());
+      deletedBucket = std::shared_ptr<value_type>((value_type*) 1, SentinelDeleter());
     }
     explicit unordered_map(const allocator_type& alloc)
       : unordered_map(DEFAULT_SIZE, hasher(), key_equal(), alloc) {}
