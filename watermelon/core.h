@@ -454,24 +454,26 @@ class unordered_map
       for (int i = 0; i < workingTable->size(); i++)
       {
         size_t index = (i + hashValue) % workingTable->size();
-        bucket bucket = workingTable->at(index).load();
+        bucket b = workingTable->at(index).load();
 
-        // skip empty buckets
-        if (bucket->state == DELETED)
+        if (b->state == DELETED)
         {
           continue;
         }
-        int expected = EMPTY;
-        if (bucket->state == EMPTY &&
-            bucket->state.compare_exchange_strong(expected, FULL))
+        if (b->state == FULL &&
+            hashValue == hf(b->v->second) &&
+            eql(val->second, b->v->second)) {
+          return std::make_pair(iterator(index, workingTable), false);
+        }
+
+        int f = FULL; // ???
+        // bucket state must be empty
+        bucket newBucket = std::make_shared<bucket_info>(val, f);
+        if (workingTable->at(index).compare_exchange_strong(b, newBucket))
         {
           element_count++;
           residence++;
           return std::make_pair(iterator(index, workingTable), true);
-        }
-        if (hashValue == hf(bucket->v->second) &&
-            eql(val->second, bucket->v->second)) {
-          return std::make_pair(iterator(index, workingTable), false);
         }
       }
       return std::make_pair(end(), false);
