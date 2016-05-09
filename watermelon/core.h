@@ -74,8 +74,16 @@ class unordered_map
 
       iterator& operator++()
       {
-        // TODO: check tags
         index++;
+        while (index < buckets->size())
+        {
+          bucket b = buckets->get(index).load();
+          if (b != deletedBucket && b != emptyBucket)
+          {
+            break;
+          }
+          index++;
+        }
         return *this;
       }
 
@@ -124,7 +132,15 @@ class unordered_map
       const_iterator& operator++()
       {
         index++;
-        // TODO: check tags
+        while (index < buckets->size())
+        {
+          bucket b = buckets->get(index).load();
+          if (b != deletedBucket && b != emptyBucket)
+          {
+            break;
+          }
+          index++;
+        }
         return *this;
       }
 
